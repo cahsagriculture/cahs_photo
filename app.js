@@ -1,8 +1,33 @@
-// Cheongju Agricultural High School Dulle-gil Project - JS Core
-// Handles routing, IndexedDB storage, image compression, photo missions, likes, SVG map rendering and Instagram slideshow.
-// Optimized for zero lag by replacing Lucide icon scanning with raw Emojis.
+// ============================================================================
+// 🌲 청주농업고등학교 둘레길 기록 프로젝트 - 클라우드 실시간 공유 버전 (Firebase Firestore)
+// ============================================================================
 
-// 1. Trails Data with Photo Missions
+// 1. Firebase 콘솔 설정값 연결 완료!
+const firebaseConfig = {
+  apiKey: "AIzaSyA6js7lbPBu5yJ4xEgtw8P_kxHyKL-RswE",
+  authDomain: "cheongnong-ae1af.firebaseapp.com",
+  projectId: "cheongnong-ae1af",
+  storageBucket: "cheongnong-ae1af.firebasestorage.app",
+  messagingSenderId: "833328149866",
+  appId: "1:833328149866:web:6fa55dd538ceba3c7de113"
+};
+
+// Firebase 초기화 확인
+let isFirebaseReady = false;
+let cloudDb = null;
+
+try {
+  if (typeof firebase !== 'undefined' && firebaseConfig.apiKey) {
+    firebase.initializeApp(firebaseConfig);
+    cloudDb = firebase.firestore();
+    isFirebaseReady = true;
+    console.log("⚡ Firebase 클라우드 데이터베이스 연결 성공!");
+  }
+} catch (e) {
+  console.error("Firebase 초기화 에러:", e);
+}
+
+// 2. 둘레길 14개 코스 데이터
 const TRAILS = [
   { id: 1, name: '첫걸음길', desc: '청농인으로서의 첫 발걸음을 딛는 설렘이 가득한 길', icon: 'footprints', color: 'emerald', mission: '신입생의 설렘을 가득 담아, 내딛는 첫 발자국이나 신발이 돋보이는 컷 촬영하기!' },
   { id: 2, name: '100주년길', desc: '청주농업고등학교의 깊은 역사와 전통을 기념하는 길', icon: 'milestone', color: 'teal', mission: '학교의 100년 역사를 상징하는 기념비나 역사관 건물을 멋지게 찍어보세요!' },
@@ -20,7 +45,6 @@ const TRAILS = [
   { id: 14, name: '미래농업길', desc: '스마트 농업과 첨단 생명산업을 이끌어갈 청농의 미래를 꿈꾸는 길', icon: 'cpu', color: 'blue', mission: '최첨단 스마트 온실이나 최신 농업 설비를 배경으로 과학공학 농업의 모습 담기!' }
 ];
 
-// Emojis for the trail list card categories per user feedback
 const TRAIL_ICONS = {
   footprints: `<span class="text-2xl select-none">👣</span>`,
   milestone: `<span class="text-2xl select-none">💯</span>`,
@@ -43,11 +67,10 @@ const SVG_ICONS = {
   heartOutline: `<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/></svg>`,
   trash: `<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>`,
   zoomIn: `<svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7"/></svg>`,
-  heartFilledLarge: `<svg class="w-4 h-4 text-rose-500 fill-rose-500" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/></svg>`,
   image: `<svg class="w-3.5 h-3.5 mr-1 fill-rose-500 text-rose-500 inline-block mb-0.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/></svg>`
 };
 
-// 2. IndexedDB Helper Class
+// 3. 로컬 IndexedDB 클래스 (기존 데이터 보존 및 마이그레이션용)
 class DulleDB {
   constructor() {
     this.dbName = 'CheongjuAgriDullegilDB';
@@ -58,17 +81,11 @@ class DulleDB {
   init() {
     return new Promise((resolve, reject) => {
       const request = indexedDB.open(this.dbName, this.dbVersion);
-
-      request.onerror = (event) => {
-        console.error('IndexedDB open error:', event.target.error);
-        reject(event.target.error);
-      };
-
+      request.onerror = (event) => reject(event.target.error);
       request.onsuccess = (event) => {
         this.db = event.target.result;
         resolve(this.db);
       };
-
       request.onupgradeneeded = (event) => {
         const db = event.target.result;
         if (!db.objectStoreNames.contains('posts')) {
@@ -79,124 +96,201 @@ class DulleDB {
     });
   }
 
-  // Add a post
-  addPost(post) {
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction(['posts'], 'readwrite');
-      const store = transaction.objectStore('posts');
-      const request = store.add(post);
-
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-    });
-  }
-
-  // Get all posts
   getAllPosts() {
     return new Promise((resolve, reject) => {
+      if (!this.db) return resolve([]);
       const transaction = this.db.transaction(['posts'], 'readonly');
       const store = transaction.objectStore('posts');
       const request = store.getAll();
-
-      request.onsuccess = () => resolve(request.result);
+      request.onsuccess = () => resolve(request.result || []);
       request.onerror = () => reject(request.error);
     });
   }
 
-  // Get posts for a specific trail
-  getPostsByTrail(trailId) {
+  addPost(post) {
     return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction(['posts'], 'readonly');
-      const store = transaction.objectStore('posts');
-      const index = store.index('trailId');
-      const request = index.getAll(IDBKeyRange.only(Number(trailId)));
-
-      request.onsuccess = () => {
-        const sorted = request.result.sort((a, b) => b.id - a.id);
-        resolve(sorted);
-      };
-      request.onerror = () => reject(request.error);
-    });
-  }
-
-  // Get a single post by id
-  getPost(id) {
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction(['posts'], 'readonly');
-      const store = transaction.objectStore('posts');
-      const request = store.get(Number(id));
-
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-    });
-  }
-
-  // Update like count
-  likePost(id) {
-    return new Promise((resolve, reject) => {
+      if (!this.db) return resolve(post.id);
       const transaction = this.db.transaction(['posts'], 'readwrite');
       const store = transaction.objectStore('posts');
-      const getRequest = store.get(Number(id));
-
-      getRequest.onsuccess = () => {
-        const post = getRequest.result;
-        if (post) {
-          post.likes = (post.likes || 0) + 1;
-          const updateRequest = store.put(post);
-          updateRequest.onsuccess = () => resolve(post.likes);
-          updateRequest.onerror = () => reject(updateRequest.error);
-        } else {
-          reject(new Error('게시물을 찾을 수 없습니다.'));
-        }
-      };
-
-      getRequest.onerror = () => reject(getRequest.error);
+      const request = store.put(post);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
     });
   }
 
-  // Delete a post by id
   deletePost(id) {
     return new Promise((resolve, reject) => {
+      if (!this.db) return resolve(true);
       const transaction = this.db.transaction(['posts'], 'readwrite');
       const store = transaction.objectStore('posts');
       const request = store.delete(Number(id));
-
       request.onsuccess = () => resolve(true);
       request.onerror = () => reject(request.error);
     });
   }
 }
 
-// Instantiate Database
-const db = new DulleDB();
+const localDb = new DulleDB();
 
-// 3. App State & Router
+// 4. 통합 데이터 저장소 (클라우드 우선, 로컬 백업)
+const AppDB = {
+  allPosts: [],
+
+  async initRealtimeListener(onUpdateCallback) {
+    if (isFirebaseReady && cloudDb) {
+      cloudDb.collection('posts').onSnapshot((snapshot) => {
+        const posts = [];
+        snapshot.forEach((doc) => {
+          posts.push(doc.data());
+        });
+        posts.sort((a, b) => b.id - a.id);
+        this.allPosts = posts;
+        if (onUpdateCallback) onUpdateCallback(posts);
+      }, (err) => {
+        console.error("Firestore 실시간 리스너 에러:", err);
+      });
+    } else {
+      this.allPosts = await localDb.getAllPosts();
+      this.allPosts.sort((a, b) => b.id - a.id);
+      if (onUpdateCallback) onUpdateCallback(this.allPosts);
+    }
+  },
+
+  async addPost(post) {
+    await localDb.addPost(post);
+
+    if (isFirebaseReady && cloudDb) {
+      await cloudDb.collection('posts').doc(String(post.id)).set(post);
+    } else {
+      this.allPosts.unshift(post);
+    }
+    return post;
+  },
+
+  async likePost(postId) {
+    const post = this.allPosts.find(p => p.id === postId);
+    if (!post) throw new Error("게시글을 찾을 수 없습니다.");
+
+    const newLikes = (post.likes || 0) + 1;
+    post.likes = newLikes;
+
+    if (isFirebaseReady && cloudDb) {
+      await cloudDb.collection('posts').doc(String(postId)).update({
+        likes: firebase.firestore.FieldValue.increment(1)
+      });
+    }
+    await localDb.addPost(post);
+    return newLikes;
+  },
+
+  async deletePost(postId) {
+    if (isFirebaseReady && cloudDb) {
+      await cloudDb.collection('posts').doc(String(postId)).delete();
+    }
+    await localDb.deletePost(postId);
+    this.allPosts = this.allPosts.filter(p => p.id !== postId);
+    return true;
+  },
+
+  getPostsByTrail(trailId) {
+    return this.allPosts.filter(p => Number(p.trailId) === Number(trailId));
+  },
+
+  getPost(postId) {
+    return this.allPosts.find(p => p.id === Number(postId));
+  }
+};
+
+// ============================================================================
+// 5. 🌟 기존 기기 사진을 클라우드로 자동 전송하는 마이그레이션 함수
+// ============================================================================
+async function syncLocalPostsToCloud(isManual = false) {
+  if (!isFirebaseReady || !cloudDb) {
+    if (isManual) {
+      alert("⚠️ Firebase가 아직 연결되지 않았습니다.");
+    }
+    return;
+  }
+
+  try {
+    const localPosts = await localDb.getAllPosts();
+    if (!localPosts || localPosts.length === 0) {
+      if (isManual) {
+        alert("이 기기에서 올렸던 이전 사진이 없습니다.");
+      }
+      return;
+    }
+
+    let syncedCount = 0;
+    for (const post of localPosts) {
+      const docRef = cloudDb.collection('posts').doc(String(post.id));
+      const docSnap = await docRef.get();
+      
+      if (!docSnap.exists) {
+        await docRef.set(post);
+        syncedCount++;
+      }
+    }
+
+    if (syncedCount > 0) {
+      showSyncBanner(`🎉 이 기기에 보관되어 있던 추억 사진 ${syncedCount}장이 전체 공유 저장소로 안전하게 등록되었습니다!`);
+    } else if (isManual) {
+      showSyncBanner("✅ 이 기기의 모든 사진이 이미 전체 공유 저장소에 등록되어 있습니다!");
+    }
+  } catch (err) {
+    console.error("이전 글 동기화 중 오류:", err);
+  }
+}
+
+function showSyncBanner(msg) {
+  const banner = document.getElementById('sync-banner');
+  const text = document.getElementById('sync-banner-text');
+  if (banner && text) {
+    text.textContent = msg;
+    banner.classList.remove('hidden');
+    setTimeout(() => {
+      banner.classList.add('hidden');
+    }, 6000);
+  }
+}
+
+function manualSync() {
+  syncLocalPostsToCloud(true);
+}
+
+// 6. 앱 상태 및 라우터
 let currentTrailId = null;
 let currentPosts = [];
-let allPostsCache = [];
 let instagramIntervalId = null;
 
-// Initialize Page Load
 window.addEventListener('DOMContentLoaded', async () => {
   try {
-    await db.init();
-    console.log('Database initialized successfully.');
+    await localDb.init();
     
-    // Setup Router & Event Listeners
+    await AppDB.initRealtimeListener(() => {
+      if (currentTrailId) {
+        renderDetailView(currentTrailId);
+      } else {
+        renderHomeCounts();
+      }
+    });
+
     window.addEventListener('hashchange', handleRouting);
-    
-    // Initial Route parsing
     handleRouting();
+
+    // 이전에 올렸던 사진이 있으면 1.2초 뒤 백그라운드 자동 동기화!
+    setTimeout(() => {
+      syncLocalPostsToCloud(false);
+    }, 1200);
+
   } catch (error) {
-    alert('브라우저 데이터베이스를 초기화할 수 없습니다. 시크릿 모드이거나 브라우저 설정에서 데이터 저장이 비활성화되었는지 확인하세요.');
+    console.error("데이터베이스 초기화 에러:", error);
   }
 });
 
-// Routing Controller
-async function handleRouting() {
+function handleRouting() {
   const hash = window.location.hash;
 
-  // Clear modal states on route change
   closeWriteModal();
   closeLightbox();
   closeDeleteModal();
@@ -212,114 +306,86 @@ async function handleRouting() {
     }
   }
 
-  // Default: Home View
   currentTrailId = null;
   showHomeView();
 }
 
-// 4. View Rendering
-// Home View Renderer
-async function showHomeView() {
+function showHomeView() {
   document.getElementById('home-view').classList.remove('hidden');
   document.getElementById('detail-view').classList.add('hidden');
   
-  // Clear any existing slideshow timer
   if (instagramIntervalId) {
     clearInterval(instagramIntervalId);
     instagramIntervalId = null;
   }
 
-  // Refresh Counts
-  allPostsCache = await db.getAllPosts();
-  
+  renderHomeCounts();
+  renderSVGMap();
+  startInstagramSlideshow();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function renderHomeCounts() {
   const countMap = {};
   TRAILS.forEach(t => countMap[t.id] = 0);
-  allPostsCache.forEach(post => {
+  
+  AppDB.allPosts.forEach(post => {
     if (countMap[post.trailId] !== undefined) {
       countMap[post.trailId]++;
     }
   });
 
-  // Render Grid
   const gridContainer = document.getElementById('trail-grid-container');
-  gridContainer.innerHTML = '';
-  
-  TRAILS.forEach(trail => {
-    const count = countMap[trail.id] || 0;
-    const card = document.createElement('div');
-    card.className = `bg-white rounded-2xl border border-emerald-100 hover:border-${trail.color}-200 p-5 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 flex flex-col justify-between group cursor-pointer`;
-    card.onclick = () => window.location.hash = `#trail-${trail.id}`;
+  if (gridContainer) {
+    gridContainer.innerHTML = '';
     
-    // Tailwind dynamic color styling mappings
-    const colorClasses = {
-      emerald: { bg: 'bg-emerald-50 text-emerald-600', hoverBg: 'group-hover:bg-emerald-600' },
-      teal: { bg: 'bg-teal-50 text-teal-600', hoverBg: 'group-hover:bg-teal-600' },
-      red: { bg: 'bg-red-50 text-red-600', hoverBg: 'group-hover:bg-red-600' },
-      indigo: { bg: 'bg-indigo-50 text-indigo-600', hoverBg: 'group-hover:bg-indigo-600' },
-      amber: { bg: 'bg-amber-50 text-amber-600', hoverBg: 'group-hover:bg-amber-600' },
-      yellow: { bg: 'bg-yellow-50 text-yellow-600', hoverBg: 'group-hover:bg-yellow-600' },
-      slate: { bg: 'bg-slate-150 text-slate-600', hoverBg: 'group-hover:bg-slate-600' },
-      green: { bg: 'bg-green-50 text-green-600', hoverBg: 'group-hover:bg-green-600' },
-      orange: { bg: 'bg-orange-50 text-orange-600', hoverBg: 'group-hover:bg-orange-600' },
-      pink: { bg: 'bg-pink-50 text-pink-600', hoverBg: 'group-hover:bg-pink-600' },
-      lime: { bg: 'bg-lime-50 text-lime-600', hoverBg: 'group-hover:bg-lime-600' },
-      blue: { bg: 'bg-blue-50 text-blue-600', hoverBg: 'group-hover:bg-blue-600' },
-    };
-
-    const style = colorClasses[trail.color] || colorClasses.emerald;
-    const trailIconSvg = TRAIL_ICONS[trail.icon] || '';
-    
-    // Renders ONLY the code, name, icon, badge count and arrow link. (Removed description per feedback)
-    card.innerHTML = `
-      <div class="space-y-4">
-        <!-- Card Header -->
-        <div class="flex items-center justify-between">
-          <span class="text-xs font-extrabold text-slate-400 bg-slate-50 px-2.5 py-1 rounded-lg tracking-wider">
-            코스 ${String(trail.id).padStart(2, '0')}
-          </span>
-          <span class="text-xs font-extrabold ${count > 0 ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-400'} px-3 py-1 rounded-full shadow-sm">
-            사진 ${count}장
-          </span>
-        </div>
-        
-        <!-- Icon & Title -->
-        <div class="flex items-center space-x-3">
-          <div class="p-2 rounded-xl ${style.bg} group-hover:bg-cjgreen-600 group-hover:text-white transition-colors duration-300 flex items-center justify-center">
-            ${trailIconSvg}
+    TRAILS.forEach(trail => {
+      const count = countMap[trail.id] || 0;
+      const card = document.createElement('div');
+      card.className = `bg-white rounded-2xl border border-emerald-100 hover:border-emerald-300 p-5 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 flex flex-col justify-between group cursor-pointer`;
+      card.onclick = () => window.location.hash = `#trail-${trail.id}`;
+      
+      const trailIconSvg = TRAIL_ICONS[trail.icon] || '';
+      
+      card.innerHTML = `
+        <div class="space-y-4">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-extrabold text-slate-400 bg-slate-50 px-2.5 py-1 rounded-lg tracking-wider">
+              코스 ${String(trail.id).padStart(2, '0')}
+            </span>
+            <span class="text-xs font-extrabold ${count > 0 ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-400'} px-3 py-1 rounded-full shadow-sm">
+              사진 ${count}장
+            </span>
           </div>
-          <h4 class="font-extrabold text-lg text-slate-900 group-hover:text-cjgreen-700 transition-colors duration-300 cute-font">${trail.name}</h4>
+          
+          <div class="flex items-center space-x-3">
+            <div class="p-2 rounded-xl bg-emerald-50 text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white transition-colors duration-300 flex items-center justify-center">
+              ${trailIconSvg}
+            </div>
+            <h4 class="font-extrabold text-lg text-slate-900 group-hover:text-emerald-700 transition-colors duration-300 cute-font">${trail.name}</h4>
+          </div>
         </div>
-      </div>
 
-      <!-- Arrow action -->
-      <div class="pt-4 border-t border-slate-50 mt-4 flex items-center justify-between text-xs font-bold text-slate-400 group-hover:text-cjgreen-600 transition-colors duration-300">
-        <span>추억 보러가기 🐾</span>
-        <svg class="w-4 h-4 transform group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
-      </div>
-    `;
+        <div class="pt-4 border-t border-slate-50 mt-4 flex items-center justify-between text-xs font-bold text-slate-400 group-hover:text-emerald-600 transition-colors duration-300">
+          <span>추억 보러가기 🐾</span>
+          <svg class="w-4 h-4 transform group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+        </div>
+      `;
 
-    gridContainer.appendChild(card);
-  });
+      gridContainer.appendChild(card);
+    });
+  }
 
-  // Update total badge
-  document.getElementById('total-photos-badge').innerHTML = `${SVG_ICONS.image}지금까지 모인 추억 ${allPostsCache.length}장`;
-  
-  // Render Dynamic Circular SVG Map
-  renderSVGMap();
-
-  // Run Slideshow
-  startInstagramSlideshow();
-
-  // Scroll smoothly to top when returning home
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  const badge = document.getElementById('total-photos-badge');
+  if (badge) {
+    badge.innerHTML = `${SVG_ICONS.image}지금까지 모인 추억 ${AppDB.allPosts.length}장`;
+  }
 }
 
-// Dynamic Circular SVG Map Renderer
 function renderSVGMap() {
   const svg = document.getElementById('map-svg');
   if (!svg) return;
   
-  // Clear any existing dynamically added nodes (to prevent duplication)
   const existingNodes = svg.querySelectorAll('.dynamic-node');
   existingNodes.forEach(n => n.remove());
   
@@ -328,42 +394,28 @@ function renderSVGMap() {
   const r = 110;
   
   TRAILS.forEach((trail, index) => {
-    // 6 o'clock is Math.PI / 2. We distribute 14 nodes clockwise.
     const angle = (Math.PI / 2) + (index * (2 * Math.PI / 14));
     const x = cx + r * Math.cos(angle);
     const y = cy + r * Math.sin(angle);
     
-    // Tailwind color styling mappings to hex
     const colorHex = {
-      emerald: '#10b981',
-      teal: '#0d9488',
-      red: '#dc2626',
-      indigo: '#4f46e5',
-      amber: '#d97706',
-      yellow: '#ca8a04',
-      slate: '#475569',
-      green: '#16a34a',
-      orange: '#ea580c',
-      pink: '#db2777',
-      lime: '#84cc16',
-      blue: '#2563eb'
+      emerald: '#10b981', teal: '#0d9488', red: '#dc2626', indigo: '#4f46e5',
+      amber: '#d97706', yellow: '#ca8a04', slate: '#475569', green: '#16a34a',
+      orange: '#ea580c', pink: '#db2777', lime: '#84cc16', blue: '#2563eb'
     }[trail.color] || '#10b981';
 
-    // Create SVG Group
     const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     g.setAttribute('class', 'cursor-pointer group/node dynamic-node');
     g.setAttribute('onclick', `window.location.hash='#trail-${trail.id}'`);
     
-    // Create Circle
     const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
     circle.setAttribute('cx', x.toFixed(1));
     circle.setAttribute('cy', y.toFixed(1));
-    circle.setAttribute('r', '13'); // Rounded cute size
+    circle.setAttribute('r', '13');
     circle.setAttribute('fill', colorHex);
     circle.setAttribute('stroke', '#ffffff');
     circle.setAttribute('stroke-width', '2');
     
-    // Create Text
     const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
     text.setAttribute('x', x.toFixed(1));
     text.setAttribute('y', (y + 3.5).toFixed(1));
@@ -373,7 +425,6 @@ function renderSVGMap() {
     text.setAttribute('text-anchor', 'middle');
     text.textContent = trail.id;
     
-    // Create SVG Title tooltip
     const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
     title.textContent = `${trail.id}코스: ${trail.name}`;
     
@@ -384,7 +435,6 @@ function renderSVGMap() {
   });
 }
 
-// Instagram Mockup Slideshow Logic
 function startInstagramSlideshow() {
   const imgEl = document.getElementById('insta-img');
   const placeholderEl = document.getElementById('insta-placeholder');
@@ -395,7 +445,7 @@ function startInstagramSlideshow() {
   const likesContainer = document.getElementById('insta-likes-container');
   
   const updateSlide = () => {
-    if (!allPostsCache || allPostsCache.length === 0) {
+    if (!AppDB.allPosts || AppDB.allPosts.length === 0) {
       if (imgEl) imgEl.classList.add('hidden');
       if (placeholderEl) placeholderEl.classList.remove('hidden');
       if (trailNameEl) trailNameEl.textContent = '둘레길 이야기 🌸';
@@ -405,8 +455,7 @@ function startInstagramSlideshow() {
       return;
     }
     
-    // Pick a random post
-    const randomPost = allPostsCache[Math.floor(Math.random() * allPostsCache.length)];
+    const randomPost = AppDB.allPosts[Math.floor(Math.random() * AppDB.allPosts.length)];
     const trail = TRAILS.find(t => t.id === randomPost.trailId);
     
     if (placeholderEl) placeholderEl.classList.add('hidden');
@@ -416,7 +465,7 @@ function startInstagramSlideshow() {
       imgEl.src = randomPost.image;
       imgEl.classList.remove('hidden');
       imgEl.classList.remove('fade-in');
-      void imgEl.offsetWidth; // Trigger reflow
+      void imgEl.offsetWidth;
       imgEl.classList.add('fade-in');
     }
     
@@ -426,16 +475,11 @@ function startInstagramSlideshow() {
     if (commentEl) commentEl.textContent = randomPost.comment;
   };
 
-  // Run once immediately
   updateSlide();
-  
-  // Set interval for every 30 seconds
-  instagramIntervalId = setInterval(updateSlide, 30000);
+  instagramIntervalId = setInterval(updateSlide, 20000);
 }
 
-// Detail / Bulletin Board View Renderer
-async function showDetailView(trailId) {
-  // Clear slideshow interval when leaving home view
+function showDetailView(trailId) {
   if (instagramIntervalId) {
     clearInterval(instagramIntervalId);
     instagramIntervalId = null;
@@ -447,25 +491,29 @@ async function showDetailView(trailId) {
   const trail = TRAILS.find(t => t.id === trailId);
   if (!trail) return;
 
-  // Render Trail Header Details & Mission
   document.getElementById('detail-trail-num').textContent = String(trail.id).padStart(2, '0');
   document.getElementById('detail-trail-name').textContent = trail.name;
   document.getElementById('detail-trail-desc').textContent = trail.desc;
   document.getElementById('detail-trail-mission').textContent = trail.mission;
 
-  // Load Posts from IndexedDB
-  currentPosts = await db.getPostsByTrail(trailId);
+  renderDetailView(trailId);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function renderDetailView(trailId) {
+  currentPosts = AppDB.getPostsByTrail(trailId);
   
-  // Render Photo Grid
   const photoGrid = document.getElementById('photo-grid-container');
   const emptyState = document.getElementById('empty-state');
+  if (!photoGrid) return;
+
   photoGrid.innerHTML = '';
 
   if (currentPosts.length === 0) {
-    emptyState.classList.remove('hidden');
+    if (emptyState) emptyState.classList.remove('hidden');
     photoGrid.classList.add('hidden');
   } else {
-    emptyState.classList.add('hidden');
+    if (emptyState) emptyState.classList.add('hidden');
     photoGrid.classList.remove('hidden');
     
     currentPosts.forEach(post => {
@@ -477,7 +525,6 @@ async function showDetailView(trailId) {
       const likeIconSvg = hasLikes ? SVG_ICONS.heartFilled : SVG_ICONS.heartOutline;
       
       card.innerHTML = `
-        <!-- Image Container -->
         <div class="relative aspect-[4/3] bg-slate-900 overflow-hidden cursor-pointer" onclick="openLightbox(${post.id})">
           <img src="${post.image}" alt="둘레길 사진" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500">
           <div class="absolute inset-0 bg-gradient-to-t from-slate-950/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-4">
@@ -487,15 +534,10 @@ async function showDetailView(trailId) {
           </div>
         </div>
         
-        <!-- Post Body -->
         <div class="p-4 flex-grow flex flex-col justify-between space-y-3">
           <p class="text-sm text-slate-700 font-medium line-clamp-3 leading-relaxed whitespace-pre-wrap flex-grow">${post.comment}</p>
-          
           <hr class="border-slate-100">
-          
-          <!-- Post Meta footer -->
           <div class="flex items-center justify-between">
-            <!-- Author info -->
             <div class="flex items-center space-x-2">
               <div class="w-7 h-7 bg-slate-100 rounded-full flex items-center justify-center text-slate-500 text-xs">
                 <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
@@ -506,16 +548,13 @@ async function showDetailView(trailId) {
               </div>
             </div>
             
-            <!-- Actions (Like & Delete) -->
             <div class="flex items-center space-x-1">
-              <!-- Like Button -->
               <button id="like-btn-${post.id}" onclick="handleLikeClick(event, ${post.id})" 
                 class="inline-flex items-center gap-1.5 text-xs font-semibold px-2 py-1 rounded transition-colors ${hasLikes ? 'text-rose-600 bg-rose-50' : 'text-slate-400 hover:text-rose-600 hover:bg-slate-50'}">
                 ${likeIconSvg}
                 <span>${likesCount}</span>
               </button>
               
-              <!-- Delete Button -->
               <button onclick="event.stopPropagation(); openDeleteModal(${post.id})" class="text-slate-400 hover:text-rose-600 transition-colors p-1" title="삭제">
                 ${SVG_ICONS.trash}
               </button>
@@ -526,13 +565,9 @@ async function showDetailView(trailId) {
       photoGrid.appendChild(card);
     });
   }
-
-  // Scroll smoothly to top when switching to a detail board
-  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-// 5. Image Compression Utility
-function compressImage(file, maxWidth = 1024, maxHeight = 1024) {
+function compressImage(file, maxWidth = 900, maxHeight = 900, quality = 0.72) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
@@ -546,7 +581,6 @@ function compressImage(file, maxWidth = 1024, maxHeight = 1024) {
         let width = img.width;
         let height = img.height;
 
-        // Calculate aspect ratio
         if (width > height) {
           if (width > maxWidth) {
             height = Math.round((height * maxWidth) / width);
@@ -565,8 +599,7 @@ function compressImage(file, maxWidth = 1024, maxHeight = 1024) {
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, width, height);
 
-        // Convert canvas image to Base64 JPEG data URL with 0.8 quality
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+        const dataUrl = canvas.toDataURL('image/jpeg', quality);
         resolve(dataUrl);
       };
 
@@ -577,38 +610,27 @@ function compressImage(file, maxWidth = 1024, maxHeight = 1024) {
   });
 }
 
-// 6. Like Click Handler
 async function handleLikeClick(event, postId) {
-  event.stopPropagation(); // Avoid opening Lightbox modal when clicking Like
+  event.stopPropagation();
   try {
-    const newLikes = await db.likePost(postId);
+    const newLikes = await AppDB.likePost(postId);
     
-    // Update Feed UI
     const likeBtn = document.getElementById(`like-btn-${postId}`);
     if (likeBtn) {
       likeBtn.innerHTML = `
         ${SVG_ICONS.heartFilled}
         <span>${newLikes}</span>
       `;
-      likeBtn.classList.remove('text-slate-400', 'hover:text-rose-600', 'hover:bg-slate-50');
-      likeBtn.classList.add('text-rose-600', 'bg-rose-50');
-    }
-    
-    // Update local state cache
-    const cachePost = currentPosts.find(p => p.id === postId);
-    if (cachePost) {
-      cachePost.likes = newLikes;
+      likeBtn.className = "inline-flex items-center gap-1.5 text-xs font-semibold px-2 py-1 rounded transition-colors text-rose-600 bg-rose-50";
     }
   } catch (error) {
     console.error('좋아요 업데이트 실패:', error);
   }
 }
 
-// 7. Modal Interactions
-// Write Modal Controls
 function openWriteModal() {
   document.getElementById('write-modal').classList.remove('hidden');
-  document.body.style.overflow = 'hidden'; // Lock background scroll
+  document.body.style.overflow = 'hidden';
 }
 
 function closeWriteModal() {
@@ -616,9 +638,13 @@ function closeWriteModal() {
   document.body.style.overflow = '';
   document.getElementById('write-form').reset();
   resetImageUpload();
+  
+  const submitBtn = document.getElementById('submit-btn');
+  const submitBtnText = document.getElementById('submit-btn-text');
+  if (submitBtn) submitBtn.disabled = false;
+  if (submitBtnText) submitBtnText.textContent = "게시물 등록";
 }
 
-// Image upload preview functions
 function previewImage(event) {
   const input = event.target;
   if (input.files && input.files[0]) {
@@ -643,7 +669,6 @@ function resetImageUpload(event) {
   document.getElementById('upload-placeholder').classList.remove('opacity-0');
 }
 
-// Post Submission Handler
 async function handlePostSubmit(event) {
   event.preventDefault();
 
@@ -651,6 +676,8 @@ async function handlePostSubmit(event) {
   const password = document.getElementById('post-password').value.trim();
   const comment = document.getElementById('post-comment').value.trim();
   const imageFile = document.getElementById('post-image').files[0];
+  const submitBtn = document.getElementById('submit-btn');
+  const submitBtnText = document.getElementById('submit-btn-text');
 
   if (!author || !password || !comment || !imageFile) {
     alert('모든 필수 항목을 입력해주세요.');
@@ -658,84 +685,76 @@ async function handlePostSubmit(event) {
   }
 
   try {
+    if (submitBtn) submitBtn.disabled = true;
+    if (submitBtnText) submitBtnText.textContent = "업로드 중...";
+
     const compressedDataUrl = await compressImage(imageFile);
 
     const newPost = {
       id: Date.now(),
       trailId: currentTrailId,
       author: author,
-      password: password, // Store password plain since it is client-only demo database
+      password: password,
       comment: comment,
       image: compressedDataUrl,
-      likes: 0, // Initialize likes at 0
+      likes: 0,
       createdAt: new Date().toISOString()
     };
 
-    await db.addPost(newPost);
+    await AppDB.addPost(newPost);
     closeWriteModal();
     
-    // Reload feed
     if (currentTrailId) {
-      showDetailView(currentTrailId);
+      renderDetailView(currentTrailId);
     }
   } catch (error) {
     console.error('글 작성 에러:', error);
-    alert('게시글을 올리는데 오류가 발생했습니다. 사진 형식을 확인하세요.');
+    alert('게시글을 올리는데 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
+    if (submitBtn) submitBtn.disabled = false;
+    if (submitBtnText) submitBtnText.textContent = "게시물 등록";
   }
 }
 
-// Lightbox Modal Controls
 async function openLightbox(postId) {
-  try {
-    const post = await db.getPost(postId);
-    if (!post) return;
+  const post = AppDB.getPost(postId);
+  if (!post) return;
 
-    const trail = TRAILS.find(t => t.id === post.trailId);
+  const trail = TRAILS.find(t => t.id === post.trailId);
 
-    document.getElementById('lightbox-img').src = post.image;
-    document.getElementById('lightbox-trail-name').textContent = trail ? trail.name : '알 수 없는 둘레길';
-    document.getElementById('lightbox-author').textContent = post.author;
-    document.getElementById('lightbox-date').textContent = formatDate(post.createdAt, true);
-    document.getElementById('lightbox-comment').textContent = post.comment;
-    document.getElementById('lightbox-likes-count').textContent = post.likes || 0;
-    
-    // Setup Lightbox Like Button Action
-    const lbLikeBtn = document.getElementById('lightbox-like-btn');
-    lbLikeBtn.onclick = async () => {
-      try {
-        const newLikes = await db.likePost(postId);
-        document.getElementById('lightbox-likes-count').textContent = newLikes;
-        
-        // Synchronize with the underlying Feed Card button
-        const feedLikeBtn = document.getElementById(`like-btn-${postId}`);
-        if (feedLikeBtn) {
-          feedLikeBtn.innerHTML = `
-            ${SVG_ICONS.heartFilled}
-            <span>${newLikes}</span>
-          `;
-          feedLikeBtn.className = "inline-flex items-center gap-1.5 text-xs font-semibold px-2 py-1 rounded transition-colors text-rose-600 bg-rose-50";
-        }
-
-        // Sync with cache
-        const cachePost = currentPosts.find(p => p.id === postId);
-        if (cachePost) cachePost.likes = newLikes;
-      } catch (e) {
-        console.error('라이트박스 좋아요 업데이트 실패:', e);
+  document.getElementById('lightbox-img').src = post.image;
+  document.getElementById('lightbox-trail-name').textContent = trail ? trail.name : '알 수 없는 둘레길';
+  document.getElementById('lightbox-author').textContent = post.author;
+  document.getElementById('lightbox-date').textContent = formatDate(post.createdAt, true);
+  document.getElementById('lightbox-comment').textContent = post.comment;
+  document.getElementById('lightbox-likes-count').textContent = post.likes || 0;
+  
+  const lbLikeBtn = document.getElementById('lightbox-like-btn');
+  lbLikeBtn.onclick = async () => {
+    try {
+      const newLikes = await AppDB.likePost(postId);
+      document.getElementById('lightbox-likes-count').textContent = newLikes;
+      
+      const feedLikeBtn = document.getElementById(`like-btn-${postId}`);
+      if (feedLikeBtn) {
+        feedLikeBtn.innerHTML = `
+          ${SVG_ICONS.heartFilled}
+          <span>${newLikes}</span>
+        `;
+        feedLikeBtn.className = "inline-flex items-center gap-1.5 text-xs font-semibold px-2 py-1 rounded transition-colors text-rose-600 bg-rose-50";
       }
-    };
+    } catch (e) {
+      console.error('좋아요 에러:', e);
+    }
+  };
 
-    // Set delete action link
-    const deleteBtn = document.getElementById('lightbox-delete-btn');
-    deleteBtn.onclick = () => {
-      closeLightbox();
-      openDeleteModal(postId);
-    };
+  const deleteBtn = document.getElementById('lightbox-delete-btn');
+  deleteBtn.onclick = () => {
+    closeLightbox();
+    openDeleteModal(postId);
+  };
 
-    document.getElementById('lightbox-modal').classList.remove('hidden');
-    document.body.style.overflow = 'hidden';
-  } catch (err) {
-    console.error(err);
-  }
+  document.getElementById('lightbox-modal').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
 }
 
 function closeLightbox() {
@@ -743,7 +762,6 @@ function closeLightbox() {
   document.body.style.overflow = '';
 }
 
-// Delete Confirmation Modal Controls
 function openDeleteModal(postId) {
   document.getElementById('delete-post-id').value = postId;
   document.getElementById('delete-modal').classList.remove('hidden');
@@ -756,7 +774,6 @@ function closeDeleteModal() {
   document.getElementById('delete-form').reset();
 }
 
-// Handle Post Deletion (Allows master bypass with '청농관리자')
 async function handlePostDelete(event) {
   event.preventDefault();
   
@@ -764,25 +781,23 @@ async function handlePostDelete(event) {
   const password = document.getElementById('delete-password').value.trim();
 
   try {
-    const post = await db.getPost(postId);
+    const post = AppDB.getPost(postId);
     if (!post) {
       alert('존재하지 않는 게시글입니다.');
       closeDeleteModal();
       return;
     }
 
-    // Admin Master Password Bypass Check
     if (password !== '청농관리자' && post.password !== password) {
       alert('비밀번호가 일치하지 않습니다.');
       return;
     }
 
-    await db.deletePost(postId);
+    await AppDB.deletePost(postId);
     closeDeleteModal();
     
-    // Refresh feed
     if (currentTrailId) {
-      showDetailView(currentTrailId);
+      renderDetailView(currentTrailId);
     }
   } catch (error) {
     console.error('글 삭제 에러:', error);
@@ -790,7 +805,6 @@ async function handlePostDelete(event) {
   }
 }
 
-// Helper: Format Date String
 function formatDate(isoString, includeTime = false) {
   if (!isoString) return '';
   const date = new Date(isoString);
@@ -806,4 +820,3 @@ function formatDate(isoString, includeTime = false) {
   
   return `${yyyy}-${mm}-${dd}`;
 }
-
