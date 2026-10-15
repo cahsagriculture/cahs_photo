@@ -788,7 +788,7 @@ async function handlePostDelete(event) {
       return;
     }
 
-    if (password !== '청농관리자' && post.password !== password) {
+    if (password !== 'admin1234' && post.password !== password) {
       alert('비밀번호가 일치하지 않습니다.');
       return;
     }
