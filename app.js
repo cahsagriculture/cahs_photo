@@ -20,19 +20,8 @@ try {
   if (typeof firebase !== 'undefined' && firebaseConfig.apiKey) {
     firebase.initializeApp(firebaseConfig);
     cloudDb = firebase.firestore();
-    
-    // ⚡ 모바일 로딩 초고속 최적화: 로컬 오프라인 캐시(Persistence) 활성화
-    // 한 번 본 사진은 폰에 캐시되어 다음 접속 시 0.1초 만에 로딩됩니다!
-    cloudDb.enablePersistence({ synchronizeTabs: true }).catch((err) => {
-      if (err.code === 'failed-precondition') {
-        console.warn("여러 탭이 열려 있어 로컬 캐시가 첫 번째 탭에서 활성화됩니다.");
-      } else if (err.code === 'unimplemented') {
-        console.warn("현재 브라우저는 로컬 캐시 저장을 지원하지 않습니다.");
-      }
-    });
-
     isFirebaseReady = true;
-    console.log("⚡ Firebase 클라우드 데이터베이스 연결 및 초고속 로컬 캐시 활성화 성공!");
+    console.log("⚡ Firebase 클라우드 데이터베이스 연결 성공!");
   }
 } catch (e) {
   console.error("Firebase 초기화 에러:", e);
@@ -90,20 +79,28 @@ class DulleDB {
   }
 
   init() {
-    return new Promise((resolve, reject) => {
-      const request = indexedDB.open(this.dbName, this.dbVersion);
-      request.onerror = (event) => reject(event.target.error);
-      request.onsuccess = (event) => {
-        this.db = event.target.result;
-        resolve(this.db);
-      };
-      request.onupgradeneeded = (event) => {
-        const db = event.target.result;
-        if (!db.objectStoreNames.contains('posts')) {
-          const store = db.createObjectStore('posts', { keyPath: 'id' });
-          store.createIndex('trailId', 'trailId', { unique: false });
+    return new Promise((resolve) => {
+      try {
+        if (typeof window === 'undefined' || !window.indexedDB) {
+          return resolve(null);
         }
-      };
+        const request = indexedDB.open(this.dbName, this.dbVersion);
+        request.onerror = () => resolve(null);
+        request.onblocked = () => resolve(null);
+        request.onsuccess = (event) => {
+          this.db = event.target.result;
+          resolve(this.db);
+        };
+        request.onupgradeneeded = (event) => {
+          const db = event.target.result;
+          if (!db.objectStoreNames.contains('posts')) {
+            const store = db.createObjectStore('posts', { keyPath: 'id' });
+            store.createIndex('trailId', 'trailId', { unique: false });
+          }
+        };
+      } catch (e) {
+        resolve(null);
+      }
     });
   }
 
@@ -173,7 +170,7 @@ const AppDB = {
 
     // 🌐 [백그라운드 동기화] 그 후 클라우드(Firebase)에서 최신 데이터를 가져와 부드럽게 갱신합니다.
     if (isFirebaseReady && cloudDb) {
-      cloudDb.collection('posts').onSnapshot(async (snapshot) => {
+      cloudDb.collection('posts').onSnapshot((snapshot) => {
         const posts = [];
         snapshot.forEach((doc) => {
           posts.push(doc.data());
@@ -182,12 +179,10 @@ const AppDB = {
         this.allPosts = posts;
         if (onUpdateCallback) onUpdateCallback(posts);
 
-        // 다음 접속 시 로딩 0초를 위해 로컬 IndexedDB에 최신 사진 전체 저장
-        try {
-          await localDb.saveAllPosts(posts);
-        } catch (err) {
-          console.warn("로컬 캐시 저장 오류:", err);
-        }
+        // UI 렌더링을 방해하지 않도록 백그라운드에서 여유롭게 캐시 저장
+        setTimeout(() => {
+          localDb.saveAllPosts(posts).catch(() => {});
+        }, 1000);
       }, (err) => {
         console.error("Firestore 실시간 리스너 에러:", err);
       });
@@ -306,8 +301,14 @@ function showSyncBanner(msg) {
   }
 }
 
-function manualSync() {
-  syncLocalPostsToCloud(true);
+async function manualSync() {
+  const icon = document.getElementById('sync-icon');
+  if (icon) icon.classList.add('animate-spin');
+  try {
+    await syncLocalPostsToCloud(true);
+  } finally {
+    if (icon) icon.classList.remove('animate-spin');
+  }
 }
 
 // 6. 앱 상태 및 라우터
@@ -318,32 +319,27 @@ const POSTS_PER_PAGE = 12; // 모바일 과부하 방지: 12장씩 분할 로딩
 let visiblePostsCount = POSTS_PER_PAGE;
 
 window.addEventListener('DOMContentLoaded', async () => {
-  try {
-    await localDb.init();
-    
-    // ⚡ 1. 라우팅 먼저 설정 (현재 접속한 코스나 홈 화면 위치 파악)
-    window.addEventListener('hashchange', handleRouting);
-    handleRouting();
+  // ⚡ 1. 라우팅 및 기본 화면 0초 만에 즉시 렌더링 (로딩 지연 완벽 차단)
+  window.addEventListener('hashchange', handleRouting);
+  handleRouting();
 
-    // ⚡ 2. 로컬 캐시 즉시 표시(0초) + 파이어베이스 백그라운드 실시간 동기화
+  // ⚡ 2. 로컬 DB 초기화 (최대 300ms 안전 타임아웃)
+  try {
+    await Promise.race([
+      localDb.init(),
+      new Promise(res => setTimeout(res, 300))
+    ]);
+  } catch (e) {}
+
+  // ⚡ 3. 실시간 리스너 연결 (로컬 캐시 즉시 표시 + 클라우드 백그라운드 동기화)
+  try {
     await AppDB.initRealtimeListener(() => {
       if (currentTrailId) {
         renderDetailView(currentTrailId);
       } else {
         renderHomeCounts();
       }
-      // 통계 모달이 열려있다면 실시간 자동 갱신
-      const statsModal = document.getElementById('stats-modal');
-      if (statsModal && !statsModal.classList.contains('hidden')) {
-        renderStatsModal();
-      }
     });
-
-    // 이전에 올렸던 사진이 있으면 1.2초 뒤 백그라운드 자동 동기화!
-    setTimeout(() => {
-      syncLocalPostsToCloud(false);
-    }, 1200);
-
   } catch (error) {
     console.error("데이터베이스 초기화 에러:", error);
   }
@@ -355,7 +351,6 @@ function handleRouting() {
   closeWriteModal();
   closeLightbox();
   closeDeleteModal();
-  closeStatsModal();
 
   if (hash.startsWith('#trail-')) {
     const idStr = hash.replace('#trail-', '');
@@ -942,295 +937,4 @@ function formatDate(isoString, includeTime = false) {
   }
   
   return `${yyyy}-${mm}-${dd}`;
-}
-
-// ============================================================================
-// 10. 📊 학급별 & 코스별 참여 현황 통계 기능
-// ============================================================================
-
-let currentStatsTab = 'class'; // 'class' 또는 'trail'
-
-// 학번에서 '학년-반' 파싱 (예: 30507 -> 3학년 5반, 30101 -> 3학년 1반, 3-5 -> 3학년 5반)
-function parseStudentClass(author) {
-  if (!author || typeof author !== 'string') return '기타/미확인';
-  
-  const trimmed = author.trim();
-
-  // 1) 5자리 학번 (예: 30507, 10215, 21004)
-  const match5 = trimmed.match(/^([1-3])([0-9]{2})[0-9]{2}/);
-  if (match5) {
-    const grade = match5[1];
-    const classNum = parseInt(match5[2], 10);
-    return `${grade}학년 ${classNum}반`;
-  }
-
-  // 2) 4자리 학번 (예: 3507, 3105)
-  const match4 = trimmed.match(/^([1-3])([1-9])([0-9]{2})/);
-  if (match4) {
-    return `${match4[1]}학년 ${match4[2]}반`;
-  }
-
-  // 3) 'X학년 Y반' 형식 (예: 3학년 5반, 3학년5반)
-  const matchKor = trimmed.match(/([1-3])\s*학년\s*([0-9]{1,2})\s*반/);
-  if (matchKor) {
-    return `${matchKor[1]}학년 ${parseInt(matchKor[2], 10)}반`;
-  }
-
-  // 4) 'X-Y' 형식 (예: 3-5, 2-10)
-  const matchDash = trimmed.match(/^([1-3])\s*[-/]\s*([0-9]{1,2})/);
-  if (matchDash) {
-    return `${matchDash[1]}학년 ${parseInt(matchDash[2], 10)}반`;
-  }
-
-  return '기타/미확인';
-}
-
-// 통계 데이터 계산
-function calculateParticipationStats() {
-  const posts = AppDB.allPosts || [];
-  
-  const classMap = {};
-  const trailMap = {};
-  
-  // 둘레길 1~14 초기화
-  TRAILS.forEach(t => {
-    trailMap[t.id] = {
-      trail: t,
-      posts: [],
-      classes: new Set(),
-      authors: new Set()
-    };
-  });
-
-  posts.forEach(post => {
-    const className = parseStudentClass(post.author);
-    const trailId = Number(post.trailId);
-
-    // 1) 학급별 집계
-    if (!classMap[className]) {
-      classMap[className] = {
-        className: className,
-        posts: [],
-        trails: new Set(),
-        authors: new Set()
-      };
-    }
-    classMap[className].posts.push(post);
-    classMap[className].trails.add(trailId);
-    classMap[className].authors.add(post.author);
-
-    // 2) 코스별 집계
-    if (trailMap[trailId]) {
-      trailMap[trailId].posts.push(post);
-      trailMap[trailId].classes.add(className);
-      trailMap[trailId].authors.add(post.author);
-    }
-  });
-
-  // 학급별 리스트 정렬 (참여 사진 수 많은 순 -> 완주 코스 많은 순)
-  const classList = Object.values(classMap).sort((a, b) => {
-    if (b.posts.length !== a.posts.length) return b.posts.length - a.posts.length;
-    if (b.trails.size !== a.trails.size) return b.trails.size - a.trails.size;
-    return a.className.localeCompare(b.className);
-  });
-
-  return {
-    totalPosts: posts.length,
-    totalClasses: Object.keys(classMap).filter(c => c !== '기타/미확인').length,
-    classList,
-    trailMap
-  };
-}
-
-// 통계 모달 열기
-function openStatsModal() {
-  renderStatsModal();
-  document.getElementById('stats-modal').classList.remove('hidden');
-  document.body.style.overflow = 'hidden';
-}
-
-// 통계 모달 닫기
-function closeStatsModal() {
-  const modal = document.getElementById('stats-modal');
-  if (modal) {
-    modal.classList.add('hidden');
-    document.body.style.overflow = '';
-  }
-}
-
-// 탭 전환 (학급별 vs 코스별)
-function switchStatsTab(tab) {
-  currentStatsTab = tab;
-  const btnClass = document.getElementById('tab-btn-class');
-  const btnTrail = document.getElementById('tab-btn-trail');
-  const viewClass = document.getElementById('stats-class-view');
-  const viewTrail = document.getElementById('stats-trail-view');
-
-  if (!btnClass || !btnTrail || !viewClass || !viewTrail) return;
-
-  if (tab === 'class') {
-    btnClass.className = "pb-2.5 border-b-2 border-emerald-600 text-emerald-700 flex items-center gap-1.5 transition font-bold";
-    btnTrail.className = "pb-2.5 border-b-2 border-transparent text-slate-400 hover:text-slate-600 flex items-center gap-1.5 transition font-bold";
-    viewClass.classList.remove('hidden');
-    viewTrail.classList.add('hidden');
-  } else {
-    btnTrail.className = "pb-2.5 border-b-2 border-emerald-600 text-emerald-700 flex items-center gap-1.5 transition font-bold";
-    btnClass.className = "pb-2.5 border-b-2 border-transparent text-slate-400 hover:text-slate-600 flex items-center gap-1.5 transition font-bold";
-    viewTrail.classList.remove('hidden');
-    viewClass.classList.add('hidden');
-  }
-}
-
-// 모달 내용 렌더링
-function renderStatsModal() {
-  const stats = calculateParticipationStats();
-
-  // 상단 요약 카드
-  const classCountEl = document.getElementById('stat-class-count');
-  const photoCountEl = document.getElementById('stat-photo-count');
-  const topClassEl = document.getElementById('stat-top-class');
-  
-  if (classCountEl) classCountEl.textContent = `${stats.totalClasses}개 반`;
-  if (photoCountEl) photoCountEl.textContent = `${stats.totalPosts}장`;
-  
-  const topClass = stats.classList.find(c => c.className !== '기타/미확인');
-  if (topClassEl) {
-    if (topClass && topClass.posts.length > 0) {
-      topClassEl.textContent = `${topClass.className} (${topClass.posts.length}장)`;
-    } else {
-      topClassEl.textContent = '-';
-    }
-  }
-
-  // 1) 학급별 뷰 렌더링
-  const classView = document.getElementById('stats-class-view');
-  if (classView) {
-    if (stats.classList.length === 0) {
-      classView.innerHTML = `
-        <div class="text-center py-12 text-slate-400">
-          <div class="text-3xl mb-2">🐾</div>
-          <p class="text-sm font-bold">아직 등록된 학급별 참여 기록이 없습니다.</p>
-        </div>
-      `;
-    } else {
-      let classHtml = '';
-      stats.classList.forEach((item, idx) => {
-        let rankBadge = '';
-        if (idx === 0) rankBadge = '<span class="text-amber-500 font-black text-sm">🥇 1위</span>';
-        else if (idx === 1) rankBadge = '<span class="text-slate-400 font-black text-sm">🥈 2위</span>';
-        else if (idx === 2) rankBadge = '<span class="text-amber-700 font-black text-sm">🥉 3위</span>';
-        else rankBadge = `<span class="text-slate-400 font-bold text-xs">${idx + 1}위</span>`;
-
-        const trailTags = Array.from(item.trails).sort((a, b) => a - b).map(tId => {
-          const t = TRAILS.find(x => x.id === tId);
-          return `<span class="inline-block bg-emerald-50 text-emerald-700 border border-emerald-100 text-[10px] font-bold px-2 py-0.5 rounded-md">${tId}코스(${t ? t.name : ''})</span>`;
-        }).join(' ');
-
-        const authorList = Array.from(item.authors);
-        const authorSummary = authorList.length > 4 
-          ? `${authorList.slice(0, 4).join(', ')} 외 ${authorList.length - 4}명`
-          : authorList.join(', ');
-
-        classHtml += `
-          <div class="bg-white border border-slate-100 hover:border-emerald-200 rounded-2xl p-4 shadow-xs hover:shadow-sm transition space-y-2.5">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center space-x-2.5">
-                <div class="w-12 text-center">${rankBadge}</div>
-                <h4 class="font-extrabold text-base text-slate-900 cute-font">${item.className}</h4>
-              </div>
-              <div class="flex items-center space-x-2">
-                <span class="text-xs font-black bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full shadow-2xs">
-                  📸 ${item.posts.length}장
-                </span>
-                <span class="text-xs font-bold bg-teal-50 text-teal-700 border border-teal-100 px-2.5 py-1 rounded-full">
-                  🌲 ${item.trails.size}개 코스
-                </span>
-              </div>
-            </div>
-
-            <div class="flex flex-wrap gap-1 pl-12">
-              ${trailTags}
-            </div>
-
-            <div class="text-[11px] text-slate-500 pl-12 flex items-center gap-1">
-              <span class="font-bold text-slate-600">참여자:</span>
-              <span class="truncate">${authorSummary || '이름 미기재'}</span>
-            </div>
-          </div>
-        `;
-      });
-      classView.innerHTML = classHtml;
-    }
-  }
-
-  // 2) 코스별 뷰 렌더링
-  const trailView = document.getElementById('stats-trail-view');
-  if (trailView) {
-    let trailHtml = '';
-    TRAILS.forEach(trail => {
-      const data = stats.trailMap[trail.id];
-      const count = data ? data.posts.length : 0;
-      const classArray = data ? Array.from(data.classes).filter(c => c !== '기타/미확인') : [];
-      
-      const classTags = classArray.length > 0
-        ? classArray.map(c => `<span class="inline-block bg-teal-50 text-teal-700 border border-teal-100 text-[10px] font-bold px-2 py-0.5 rounded-md">${c}</span>`).join(' ')
-        : '<span class="text-[11px] text-slate-400">아직 참여 학급 없음</span>';
-
-      trailHtml += `
-        <div class="bg-white border border-slate-100 hover:border-emerald-200 rounded-2xl p-3.5 shadow-xs transition flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div class="space-y-1">
-            <div class="flex items-center space-x-2">
-              <span class="text-xs font-extrabold text-white bg-emerald-600 px-2 py-0.5 rounded-lg">
-                ${String(trail.id).padStart(2, '0')}코스
-              </span>
-              <h4 class="font-bold text-sm text-slate-900 cute-font">${trail.name}</h4>
-              <span class="text-xs font-extrabold ${count > 0 ? 'text-emerald-700 bg-emerald-50' : 'text-slate-400 bg-slate-50'} px-2 py-0.5 rounded-md">
-                ${count}장
-              </span>
-            </div>
-            <div class="flex flex-wrap gap-1 pt-1">
-              ${classTags}
-            </div>
-          </div>
-          <button onclick="closeStatsModal(); window.location.hash='#trail-${trail.id}';" class="shrink-0 text-xs font-bold text-emerald-600 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-xl transition text-center cursor-pointer">
-            사진 보러가기 🐾
-          </button>
-        </div>
-      `;
-    });
-    trailView.innerHTML = trailHtml;
-  }
-}
-
-// 엑셀 및 결과보고서용 텍스트 복사 기능
-function copyStatsReport() {
-  const stats = calculateParticipationStats();
-  
-  let report = `[청주농업고등학교 둘레길 기록 프로젝트 - 학급별 참여 현황 보고서]\n`;
-  report += `* 집계 일시: ${new Date().toLocaleString('ko-KR')}\n`;
-  report += `* 총 등록 사진: ${stats.totalPosts}장 | 총 참여 학급: ${stats.totalClasses}개 반\n\n`;
-  
-  report += `=== [1. 학급별 참여 순위] ===\n`;
-  report += `순위\t학급명\t등록사진수\t완주코스수\t완주코스목록\t참여자\n`;
-  stats.classList.forEach((item, idx) => {
-    const trailsStr = Array.from(item.trails).sort((a, b) => a - b).map(t => `${t}코스`).join(', ');
-    const authorsStr = Array.from(item.authors).join(', ');
-    report += `${idx + 1}위\t${item.className}\t${item.posts.length}장\t${item.trails.size}개\t${trailsStr}\t${authorsStr}\n`;
-  });
-
-  report += `\n=== [2. 둘레길 코스별 참여 학급 현황] ===\n`;
-  report += `코스번호\t코스명\t등록사진수\t참여학급목록\n`;
-  TRAILS.forEach(trail => {
-    const data = stats.trailMap[trail.id];
-    const count = data ? data.posts.length : 0;
-    const classesStr = data && data.classes.size > 0 ? Array.from(data.classes).join(', ') : '없음';
-    report += `${trail.id}코스\t${trail.name}\t${count}장\t${classesStr}\n`;
-  });
-
-  navigator.clipboard.writeText(report).then(() => {
-    alert("✅ 학급별 참여 현황이 클립보드에 복사되었습니다!\n\n엑셀(Excel)이나 한글(HWP) 표에 바로 붙여넣기(Ctrl + V)하시면 표 형식으로 깔끔하게 입력됩니다.");
-  }).catch(err => {
-    console.error("복사 실패:", err);
-    alert("클립보드 복사에 실패했습니다. 브라우저 권한을 확인해주세요.");
-  });
 }
