@@ -561,7 +561,6 @@ function startInstagramSlideshow() {
       }));
     } catch (e) {}
   };
-  };
 
   updateSlide();
   instagramIntervalId = setInterval(updateSlide, 20000);
