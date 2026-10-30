@@ -70,15 +70,9 @@
         </div>
       </a>
       <div class="flex items-center space-x-2">
-        <!-- 학급별 참여 현황 버튼 -->
-        <button onclick="openStatsModal()" title="학급별 둘레길 참여 현황 보기" class="text-xs font-bold text-white bg-gradient-to-r from-emerald-600 to-lime-500 hover:from-emerald-700 hover:to-lime-600 px-3.5 py-2 rounded-full transition-all shadow-sm flex items-center gap-1.5">
-          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
-          <span class="hidden sm:inline">학급별 참여 현황</span>
-          <span class="sm:hidden">반별현황</span> 📊
-        </button>
         <!-- 이전 내 글 동기화 버튼 -->
-        <button onclick="manualSync()" title="내 폰에만 저장되어 있던 이전 글을 모두에게 공유" class="text-xs font-bold text-emerald-800 bg-amber-100 hover:bg-amber-200 border border-amber-300 px-3 py-2 rounded-full transition-colors flex items-center gap-1 shadow-sm">
-          <svg class="w-3.5 h-3.5 text-amber-600 animate-spin" id="sync-icon" style="animation-duration: 3s;" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+        <button onclick="manualSync()" title="내 폰에만 저장되어 있던 이전 글을 모두에게 공유" class="text-xs font-bold text-emerald-800 bg-amber-100 hover:bg-amber-200 border border-amber-300 px-3.5 py-2 rounded-full transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer">
+          <svg class="w-3.5 h-3.5 text-amber-600" id="sync-icon" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
           <span class="hidden sm:inline">이전 내 글 </span>동기화
         </button>
         <a href="#" class="text-xs font-bold text-slate-500 hover:text-cjgreen-600 transition-colors flex items-center gap-1.5 bg-slate-50 px-3.5 py-2 rounded-full border border-slate-150">
@@ -125,14 +119,11 @@
           <div class="pt-2 flex flex-wrap gap-2 items-center">
             <span class="inline-flex items-center text-xs font-bold text-emerald-800 bg-gradient-to-r from-yellow-100 to-yellow-200 border border-emerald-200/50 px-4 py-2 rounded-full shadow-md" id="total-photos-badge">
               <svg class="w-3.5 h-3.5 mr-1 fill-rose-500 text-rose-500 inline-block" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/></svg>
-              지금까지 모인 추억 불러오는 중...
+              지금까지 모인 추억
             </span>
             <span class="inline-flex items-center text-[11px] font-bold text-emerald-900 bg-white/70 px-3 py-1.5 rounded-full">
               ⚡ 실시간 전체 공유 중
             </span>
-            <button onclick="openStatsModal()" class="inline-flex items-center text-xs font-bold text-emerald-900 bg-white hover:bg-emerald-50 border border-emerald-200/80 px-3.5 py-1.5 rounded-full shadow-md transition gap-1.5 cursor-pointer">
-              <span>📊 학급별 참여 랭킹</span>
-            </button>
           </div>
         </div>
 
@@ -480,82 +471,6 @@
           </button>
         </div>
       </form>
-    </div>
-  </div>
-
-  <!-- CLASS & TRAIL PARTICIPATION STATS MODAL -->
-  <div id="stats-modal" class="fixed inset-0 z-50 flex items-center justify-center hidden">
-    <!-- Backdrop -->
-    <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onclick="closeStatsModal()"></div>
-    
-    <!-- Modal Container -->
-    <div class="relative bg-white w-full max-w-2xl mx-4 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] z-10">
-      
-      <!-- Modal Header -->
-      <div class="bg-gradient-to-r from-emerald-600 via-teal-600 to-lime-500 text-white px-6 py-4.5 flex items-center justify-between">
-        <div>
-          <h3 class="font-bold text-xl flex items-center gap-2 cute-font">
-            📊 청농 둘레길 학급별 참여 현황
-          </h3>
-          <p class="text-xs text-emerald-100 mt-0.5">실시간으로 집계된 학급별·코스별 챌린지 기록입니다</p>
-        </div>
-        <button onclick="closeStatsModal()" class="text-white/80 hover:text-white transition flex items-center justify-center">
-          <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
-        </button>
-      </div>
-
-      <!-- Quick Summary Cards -->
-      <div class="grid grid-cols-3 gap-3 p-4 bg-emerald-50/50 border-b border-emerald-100">
-        <div class="bg-white rounded-2xl p-3 border border-emerald-100 text-center shadow-xs">
-          <div class="text-[11px] font-bold text-slate-400">참여 학급</div>
-          <div class="text-lg font-black text-emerald-700 cute-font" id="stat-class-count">0개 반</div>
-        </div>
-        <div class="bg-white rounded-2xl p-3 border border-emerald-100 text-center shadow-xs">
-          <div class="text-[11px] font-bold text-slate-400">등록된 추억</div>
-          <div class="text-lg font-black text-slate-800 cute-font" id="stat-photo-count">0장</div>
-        </div>
-        <div class="bg-white rounded-2xl p-3 border border-emerald-100 text-center shadow-xs">
-          <div class="text-[11px] font-bold text-amber-500">🏆 1위 학급</div>
-          <div class="text-sm font-black text-amber-600 cute-font truncate" id="stat-top-class">-</div>
-        </div>
-      </div>
-
-      <!-- Tab Switcher -->
-      <div class="flex border-b border-slate-100 px-6 pt-3 gap-4 bg-white text-sm font-bold">
-        <button id="tab-btn-class" onclick="switchStatsTab('class')" class="pb-2.5 border-b-2 border-emerald-600 text-emerald-700 flex items-center gap-1.5 transition">
-          <span>🏫 학급별 랭킹</span>
-        </button>
-        <button id="tab-btn-trail" onclick="switchStatsTab('trail')" class="pb-2.5 border-b-2 border-transparent text-slate-400 hover:text-slate-600 flex items-center gap-1.5 transition">
-          <span>🌲 코스별 참여 학급</span>
-        </button>
-      </div>
-
-      <!-- Modal Body (Scrollable) -->
-      <div class="p-6 overflow-y-auto no-scrollbar flex-grow space-y-4">
-        
-        <!-- View 1: Class View -->
-        <div id="stats-class-view" class="space-y-3">
-          <!-- Dynamically populated via JS -->
-        </div>
-
-        <!-- View 2: Trail View -->
-        <div id="stats-trail-view" class="hidden space-y-3">
-          <!-- Dynamically populated via JS -->
-        </div>
-
-      </div>
-
-      <!-- Modal Footer (Actions) -->
-      <div class="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-3">
-        <button onclick="copyStatsReport()" class="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-white hover:bg-emerald-50 border border-emerald-200 px-3.5 py-2.5 rounded-xl shadow-xs transition">
-          <svg class="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
-          <span>📋 엑셀/보고서용 텍스트 복사</span>
-        </button>
-        <button onclick="closeStatsModal()" class="text-xs font-bold text-slate-600 hover:text-slate-800 px-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 transition">
-          닫기
-        </button>
-      </div>
-
     </div>
   </div>
 
